@@ -30,26 +30,20 @@ app.post('/api/scrape-and-convert', async (req, res) => {
         const pageHTML = await pageResponse.text();
         
         // Send to Claude to extract times
-        const message = await client.messages.create({
-            model: "claude-sonnet-4-6",
-            max_tokens: 800,
-            messages: [{
-                role: "user",
-                content: `Here is HTML from a booking page:
+const message = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 300,
+    messages: [{
+        role: "user",
+        content: `Extract available times from this booking page HTML and convert to ${recipientTimezone}.
 
-${pageHTML.substring(0, 5000)}
+Return ONLY JSON (no other text):
+{"success":true,"emailHTML":"<p>Do any of these times work? All in [TZ].</p><ul><li>* [Date]: [time1], [time2]</li></ul>"}
 
-Extract ALL available time slots visible on this page. List them as times (e.g., "10:00 AM", "2:30 PM").
-
-Then convert ALL times to ${recipientTimezone} timezone.
-
-Return ONLY a JSON object with NO other text:
-{
-    "success": true,
-    "emailHTML": "<p>Do any of these times work for you? All are in [TIMEZONE ABBREV].</p><ul><li>* [Date]: [time1], [time2], [time3]</li><li>* [Date]: [time1], [time2]</li></ul>"
-}`
-            }]
-        });
+HTML:
+${pageHTML.substring(0, 2000)}`
+    }]
+});
         
         const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
