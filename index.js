@@ -6,6 +6,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get('/test', (req, res) => {
+    res.json({ message: 'test route works' });
+});
+
 const client = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY
 });
