@@ -6,12 +6,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get('/test', (req, res) => {
-    res.json({ message: 'test route works' });
-});
-
 const client = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY
+});
+
+app.get('/test', (req, res) => {
+    res.json({ message: 'test route works' });
 });
 
 app.post('/api/scrape-and-convert', async (req, res) => {
@@ -22,36 +22,40 @@ app.post('/api/scrape-and-convert', async (req, res) => {
     }
     
     try {
+        // Fetch the booking page HTML
+        const pageResponse = await fetch(bookingLink);
+        if (!pageResponse.ok) {
+            return res.status(400).json({ success: false, error: 'Could not access booking link' });
+        }
+        const pageHTML = await pageResponse.text();
+        
+        // Send to Claude to extract times
         const message = await client.messages.create({
             model: "claude-sonnet-4-6",
-            max_tokens: 1024,
+            max_tokens: 800,
             messages: [{
                 role: "user",
-                content: `Visit this booking link and extract available times: ${bookingLink}
-                
-Convert all times to ${recipientTimezone} timezone.
+                content: `Here is HTML from a booking page:
 
-Return ONLY a JSON object with this exact structure:
+${pageHTML.substring(0, 5000)}
+
+Extract ALL available time slots visible on this page. List them as times (e.g., "10:00 AM", "2:30 PM").
+
+Then convert ALL times to ${recipientTimezone} timezone.
+
+Return ONLY a JSON object with NO other text:
 {
     "success": true,
-    "emailHTML": "<p>Do any of these times work for you? All are in [TZ].</p><ul><li>* [Date]: [time1], [time2], ...</li></ul>",
-    "error": null
-}
-
-If you can't access the link, return:
-{
-    "success": false,
-    "emailHTML": null,
-    "error": "Could not scrape [service]. Visit the link directly or ask to use the main booking link."
+    "emailHTML": "<p>Do any of these times work for you? All are in [TIMEZONE ABBREV].</p><ul><li>* [Date]: [time1], [time2], [time3]</li><li>* [Date]: [time1], [time2]</li></ul>"
 }`
             }]
         });
         
-        const responseText = message.content[0].text;
+        const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         
         if (!jsonMatch) {
-            return res.status(500).json({ error: 'Failed to parse Claude response' });
+            return res.status(500).json({ success: false, error: 'Could not extract times from page' });
         }
         
         const result = JSON.parse(jsonMatch[0]);
@@ -59,7 +63,18 @@ If you can't access the link, return:
         
     } catch (error) {
         console.error('Error:', error.message);
-        res.status(500).json({ error: error.message });
+        
+        if (error.status === 429) {
+            return res.status(429).json({ 
+                success: false,
+                error: 'Rate limited. Please wait a moment and try again.' 
+            });
+        }
+        
+        res.status(500).json({ 
+            success: false,
+            error: error.message || 'Failed to process booking link' 
+        });
     }
 });
 
